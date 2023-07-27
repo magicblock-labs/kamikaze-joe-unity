@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Collections.Generic;
+using Chainstrike;
 using Chainstrike.Types;
 using codebase.utility;
 using MoreMountains.TopDownEngine;
@@ -36,23 +38,20 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
     [SerializeField]
     private GameObject explosionPrefab;
 
-    private LevelManager levelManager;
-    private GameObject healthBar;
-    private CharacterGridMovement gridCharacter;
-    private InputManager inputManager;
-    GameObject[,] instantiatedBlocks = new GameObject[30, 30];
-    GameObject[,] instantiatedRecharger = new GameObject[30, 30];
+    private LevelManager _levelManager;
+    private GameObject _healthBar;
+    private CharacterGridMovement _gridCharacter;
+    private GameObject[,] _instantiatedBlocks = new GameObject[30, 30];
+    private GameObject[,] _instantiatedRecharger = new GameObject[30, 30];
     
-    private IDictionary<string, GameObject> _enemies = new Dictionary<string, GameObject>();
+    private readonly IDictionary<string, GameObject> _enemies = new Dictionary<string, GameObject>();
 
     private void Start()
     {
-        levelManager = GameObject.Find("LevelManager").GetComponent<LevelManager>();
-        healthBar = GameObject.Find("HealthBarFront");
-        gridCharacter = GameObject.Find("MinimalGridCharacter").GetComponent<CharacterGridMovement>();
-        inputManager = GameObject.Find("UICamera").GetComponent<InputManager>();
-        
-        txtGameId.text = PlayerPrefs.GetString("gameID", "");;
+        _levelManager = GameObject.Find("LevelManager").GetComponent<LevelManager>();
+        _healthBar = GameObject.Find("HealthBarFront");
+        _gridCharacter = GameObject.Find("MinimalGridCharacter").GetComponent<CharacterGridMovement>();
+        txtGameId.text = PlayerPrefs.GetString("gameID", "");
     }
 
     private void OnEnable()
@@ -67,39 +66,60 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
 
     private void OnExplosionHandler()
     {
-        var explosion = Instantiate(explosionPrefab, gridCharacter.transform.position, Quaternion.identity);
+        var explosion = Instantiate(explosionPrefab, _gridCharacter.transform.position, Quaternion.identity);
         Destroy(explosion, 5f);
     }
 
     public void StartReceivingInput()
     {
-        gridCharacter.DisableInput = false;
+        _gridCharacter.DisableInput = false;
     }
     
     public void StopReceivingInput()
     {
-        gridCharacter.DisableInput = true;
+        _gridCharacter.DisableInput = true;
     }
-    
+
     public void ResetEnergy()
     {
-        gridCharacter.ResetEnergy();
+        _gridCharacter.ResetEnergy();
+    }
+    
+    public void ResetLevel()
+    {
+        _gridCharacter.DisableInput = true;
+        _gridCharacter.StopAllMovements();
+        foreach (var enemiesValue in _enemies.Values)
+        {
+            Destroy(enemiesValue);
+        }
+        _enemies.Clear();
+        // foreach (var block in _instantiatedBlocks)
+        // {
+        //     Destroy(block);
+        // }
+        // _instantiatedBlocks = new GameObject[30, 30];
+        // foreach (var recharger in _instantiatedRecharger)
+        // {
+        //     Destroy(recharger);
+        // }
+        // _instantiatedRecharger = new GameObject[30, 30];
     }
     
     private void CreateBlock(int x, int y)
     {
-        if (instantiatedBlocks[UnMapX(x), UnMapY(y)] != null) return;
+        if (_instantiatedBlocks[UnMapX(x), UnMapY(y)] != null) return;
         Vector3 position = new Vector3(x, 0, y);
         var block = Instantiate(blockPrefab, position, Quaternion.identity, grid.transform);
-        instantiatedBlocks[UnMapX(x), UnMapY(y)] = block;
+        _instantiatedBlocks[UnMapX(x), UnMapY(y)] = block;
     }
 
     private void CreateRecharge(int x, int y)
     {
-        if (instantiatedRecharger[UnMapX(x), UnMapY(y)] != null) return;
+        if (_instantiatedRecharger[UnMapX(x), UnMapY(y)] != null) return;
         Vector3 position = new Vector3(x, 0, y);
         var block = Instantiate(rechargerPrefab, position, Quaternion.identity, grid.transform);
-        instantiatedRecharger[UnMapX(x), UnMapY(y)] = rechargerPrefab;
+        _instantiatedRecharger[UnMapX(x), UnMapY(y)] = rechargerPrefab;
     }
 
     public void SetGrid(Cell[][] gridCells)
@@ -127,11 +147,21 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
         if(enemy == null)
         {
             enemy = Instantiate(enemyPrefab, playerPos, Quaternion.identity);
+            var enemyInfo = enemy.AddComponent<Enemy>();
+            enemyInfo.energy = player.Energy;
             _enemies.Add(player.Address, enemy);
         }
         else
         {
-            enemy.transform.position = playerPos;
+            //enemy.transform.position = playerPos;
+            StartCoroutine(MoveToSpot(enemy.transform, playerPos, 0.2f));
+            var enemyInfo = enemy.GetComponent<Enemy>();
+            if (enemyInfo.energy - player.Energy > 10)
+            {
+                var explosion = Instantiate(explosionPrefab, playerPos, Quaternion.identity);
+                Destroy(explosion, 5f);
+            }
+            enemyInfo.energy = player.Energy;
         }
 
         switch (player.Facing)
@@ -158,7 +188,7 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
         {
             if (player.Address.Equals(Web3.Account.PublicKey))
             {
-                var playerObject = levelManager.Players.ToArray()[0];
+                var playerObject = _levelManager.Players.ToArray()[0];
                 if (playerObject.MovementState.CurrentState == CharacterStates.MovementStates.Idle)
                 {
                     var playerPos = GridManager.Instance.CellToWorldCoordinates(new Vector3Int(MapPlayerX(player.X), 0, MapPlayerY(player.Y)));
@@ -171,13 +201,13 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
                     {
                         playerObject.transform.position = playerPos;
                         playerObject.RespawnAt(playerObject.transform, MapFacing(player.Facing));
-                        gridCharacter.Stop(MapFacingToGrid(player.Facing));
-                        gridCharacter.StopMovement();
-                        gridCharacter.SetCurrentWorldPositionAsNewPosition();
+                        _gridCharacter.Stop(MapFacingToGrid(player.Facing));
+                        _gridCharacter.StopMovement();
+                        _gridCharacter.SetCurrentWorldPositionAsNewPosition();
                     }
                 }
 
-                healthBar.transform.localScale = new Vector3(player.Energy/100f, 1, 1);
+                _healthBar.transform.localScale = new Vector3(player.Energy/100f, 1, 1);
                 if (player.Energy == 0)
                 {
                     StopReceivingInput();
@@ -292,6 +322,21 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
 
         return dir;
     }
+    
+    private IEnumerator MoveToSpot(Transform targetTransform, Vector3 toPosition, float waitTime = 0.3f)
+    {
+        float elapsedTime = 0;
+        var currentPos = targetTransform.position;
+        while (elapsedTime < waitTime)
+        {
+            targetTransform.position = Vector3.Lerp(currentPos, toPosition, (elapsedTime / waitTime));
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+        targetTransform.position = toPosition;
+        yield return null;
+    }
+
 
     public void ToogleMenu()
     {
@@ -308,6 +353,7 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
     public void SetGameID(string gameID)
     {
         txtGameId.text = gameID;
+        PlayerPrefs.SetString("pkPlayer", Web3.Account.PublicKey);
         PlayerPrefs.SetString("gameID", gameID);
     }
     

@@ -64,7 +64,8 @@ namespace Solana.Unity.SDK.Example
             var account = await Web3.Instance.CreateAccount(mnemonic, password);
             if (account != null)
             {
-                manager.ShowScreen(this, "wallet_screen");
+                //manager.ShowScreen(this, "wallet_screen");
+                gameObject.SetActive(false);
             }
             else
             {

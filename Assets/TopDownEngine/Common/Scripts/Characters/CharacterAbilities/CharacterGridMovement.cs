@@ -564,10 +564,8 @@ namespace MoreMountains.TopDownEngine
 				_movingToNextGridUnit = false;
 				_energy -= 1;
 				CurrentGridPosition = GridManager.Instance.WorldToCellCoordinates(_endWorldPosition);
-				Debug.Log("DECREMENTING ENERGY: " + _energy);
 				if (_energy <= 0) 
 				{
-					Debug.Log("NO ENERGY");
 					StopAllMovements();
 					DisableInput = true;
 					return;
@@ -596,9 +594,11 @@ namespace MoreMountains.TopDownEngine
 
 		public void StopAllMovements()
 		{
-			_bufferedDirection = GridDirections.None;
-			_stopBuffered = false;
 			StopMovement();
+			_bufferedDirection = GridDirections.None;
+			_currentDirection = GridDirections.None;
+			_energyDirection = GridDirections.None;
+			_stopBuffered = false;
 		}
 		
 

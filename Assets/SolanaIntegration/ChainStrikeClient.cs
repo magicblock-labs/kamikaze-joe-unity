@@ -43,19 +43,31 @@ public class ChainStrikeClient : MonoBehaviour
 
     private static readonly int[][] spawnPoints = new int[][] { new[] { 1, 1}, new[] { 26, 26}, new[] { 1, 26}, new[] { 26, 1} };
     private bool _isMoving;
-    private bool _first = true;
+    private bool _initPlayer = true;
 
     private void OnEnable()
     {
         CharacterGridMovement.OnGridMovementEvent += OnMove;
         DetectEnergyChange.OnExplosion += OnExplosion;
+        Web3.OnLogin += OnLogin;
     }
 
     private void OnDisable()
     {
         CharacterGridMovement.OnGridMovementEvent -= OnMove;
         DetectEnergyChange.OnExplosion -= OnExplosion;
+        Web3.OnLogin -= OnLogin;
     }
+
+    private void OnLogin(Account account)
+    {
+        var prevMatch = PlayerPrefs.GetString("gameID", null);
+        if (prevMatch != null && account.PublicKey.ToString().Equals(PlayerPrefs.GetString("pkPlayer", null)))
+        {
+            JoinGame(prevMatch).Forget();
+        }
+    }
+
 
     private void OnMove(CharacterGridMovement.GridDirections direction)
     {
@@ -114,9 +126,11 @@ public class ChainStrikeClient : MonoBehaviour
             }
             Debug.Log("Joined Game");
         }
+        game = (await ChainstrikeClient.GetGameAsync(gameId, Commitment.Confirmed)).ParsedResult;
         Loading.StopLoading();
         _gameInstanceId = new PublicKey(gameId);
         UIManger.Instance.SetGameID(_gameInstanceId);
+        _initPlayer = true;
         SetGame(game);
         Debug.Log($"Subscribing to game");
         SubscribeToGame(new PublicKey(gameId)).Forget();
@@ -161,6 +175,7 @@ public class ChainStrikeClient : MonoBehaviour
             _gameInstanceId = gamePda;
             UIManger.Instance.SetGameID(_gameInstanceId);
             Debug.Log($"Setting game");
+            _initPlayer = true;
             SetGame(game);
             Debug.Log($"Subcribing to game");
             SubscribeToGame(gamePda).Forget();
@@ -239,14 +254,16 @@ public class ChainStrikeClient : MonoBehaviour
     private void SetGame(Game game)
     {
         Debug.Log("set game");
+        if (_initPlayer) UIManger.Instance.ResetLevel();
         UIManger.Instance.SetGrid(game.Grid.Cells);
         UIManger.Instance.SetCharacters(game.Players);
-        if (_first)
+        if (_initPlayer)
         {
             UIManger.Instance.ResetEnergy();
             UIManger.Instance.StartReceivingInput();
+            _initPlayer = false;
+
         }
-        if (_first) _first = false;
     }
     
     #region Transactions

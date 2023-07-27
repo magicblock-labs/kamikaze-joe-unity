@@ -81,8 +81,9 @@ namespace Solana.Unity.SDK.Example
             try
             {
                 await Web3.Instance.CreateAccount(mnemonic, password);
-                manager.ShowScreen(this, "wallet_screen");
+                //manager.ShowScreen(this, "wallet_screen");
                 needPasswordTxt.gameObject.SetActive(false);
+                gameObject.SetActive(false);
             }
             catch (Exception ex)
             {
