@@ -137,9 +137,9 @@ namespace MoreMountains.TopDownEngine
 		protected bool _upPressedLastFrame = false;
 		
 		private Vector3 _lastPosition;
-		private int _energy;
-		private GridDirections _energyDirection;
-		public static int EnergyToUse = 5;
+		private int _energy = 0;
+		private GridDirections _energyDirection = GridDirections.None;
+		public static int EnergyToUse = 3;
 
 		/// <summary>
 		/// A public method used to set the character's direction (only in Script InputMode)
@@ -283,7 +283,7 @@ namespace MoreMountains.TopDownEngine
 			HandleState();
 		}
 
-		public bool DisableInput { get; set; } = false;
+		public bool DisableInput { get; set; } = true;
 
 		/// <summary>
 		/// Grabs horizontal and vertical input and stores them
@@ -467,8 +467,12 @@ namespace MoreMountains.TopDownEngine
 				    || ((_bufferedDirection == GridDirections.Up) && !(_controller.DetectedObstacleUp != null))
 				    || ((_bufferedDirection == GridDirections.Down) && !(_controller.DetectedObstacleDown != null)))
 				{
-					_currentDirection = _bufferedDirection;
-					_energy = EnergyToUse;
+					if (!DisableInput)
+					{
+						_currentDirection = _bufferedDirection;
+						ResetEnergy();
+						Debug.Log("FULL ENERGY");
+					}
 				}
 
 				// we compute and move towards our new destination
@@ -492,8 +496,11 @@ namespace MoreMountains.TopDownEngine
 					GridManager.Instance.OccupyCell(TargetGridPosition);
 
 					_energyDirection = _currentDirection;
-					if(_energy == EnergyToUse) OnGridMovementEvent?.Invoke(_currentDirection);
-					
+					if (_energy == EnergyToUse)
+					{	
+						//DisableInput = true;
+						OnGridMovementEvent?.Invoke(_currentDirection);
+					}
 					CurrentCellCoordinates = TargetGridPosition;
 					_lastOccupiedCellCoordinates = TargetGridPosition;
 				}
@@ -557,10 +564,18 @@ namespace MoreMountains.TopDownEngine
 				_movingToNextGridUnit = false;
 				_energy -= 1;
 				CurrentGridPosition = GridManager.Instance.WorldToCellCoordinates(_endWorldPosition);
+				Debug.Log("DECREMENTING ENERGY: " + _energy);
+				if (_energy <= 0) 
+				{
+					Debug.Log("NO ENERGY");
+					StopAllMovements();
+					DisableInput = true;
+					return;
+				}
 			}
 
 			// we handle the buffer. If we have a buffered direction, are on a perfect tile, and don't have an input
-			if ((_bufferedDirection != GridDirections.None) && !_movingToNextGridUnit && (_inputDirection == GridDirections.None) && UseInputBuffer)
+			if ((_bufferedDirection != GridDirections.None) && !_movingToNextGridUnit && (_inputDirection == GridDirections.None) && UseInputBuffer && _energy > 0)
 			{
 				// we reduce the buffer counter
 				_lastBufferInGridUnits--;
@@ -578,6 +593,14 @@ namespace MoreMountains.TopDownEngine
 				_stopBuffered = false;
 			}
 		}
+
+		public void StopAllMovements()
+		{
+			_bufferedDirection = GridDirections.None;
+			_stopBuffered = false;
+			StopMovement();
+		}
+		
 
 		/// <summary>
 		/// Determines the end position based on the current direction
@@ -709,6 +732,11 @@ namespace MoreMountains.TopDownEngine
 			MMAnimatorExtensions.UpdateAnimatorFloat(_animator, _speedAnimationParameter, CurrentSpeed, _character._animatorParameters, _character.RunAnimatorSanityChecks);
 			MMAnimatorExtensions.UpdateAnimatorBool(_animator, _walkingAnimationParameter, (_movement.CurrentState == CharacterStates.MovementStates.Walking),_character._animatorParameters, _character.RunAnimatorSanityChecks);
 			MMAnimatorExtensions.UpdateAnimatorBool(_animator, _idleAnimationParameter, (_movement.CurrentState == CharacterStates.MovementStates.Idle),_character._animatorParameters, _character.RunAnimatorSanityChecks);
+		}
+
+		public void ResetEnergy()
+		{
+			_energy = EnergyToUse;
 		}
 	}
 }

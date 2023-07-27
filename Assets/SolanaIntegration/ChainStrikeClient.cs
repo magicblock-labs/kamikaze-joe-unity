@@ -34,8 +34,8 @@ public class ChainStrikeClient : MonoBehaviour
     private Toast _toast;
     private PublicKey _gameInstanceId;
     
-    //private readonly PublicKey _chainStrikeProgramId = new("F91oPUhkygpaR4KAazG1mXhQ6yYavh6LbQq46r2LKM6b");
-    private readonly PublicKey _chainStrikeProgramId = new("3ARzo1BnheocchBNMxEo5f86nZ7MkyyiSgZGBn6WBxPf");
+    private readonly PublicKey _chainStrikeProgramId = new("F91oPUhkygpaR4KAazG1mXhQ6yYavh6LbQq46r2LKM6b");
+    //private readonly PublicKey _chainStrikeProgramId = new("3ARzo1BnheocchBNMxEo5f86nZ7MkyyiSgZGBn6WBxPf");
     
     private ChainstrikeClient _chainstrikeClient;
     private ChainstrikeClient ChainstrikeClient => _chainstrikeClient ??= 
@@ -43,6 +43,7 @@ public class ChainStrikeClient : MonoBehaviour
 
     private static readonly int[][] spawnPoints = new int[][] { new[] { 1, 1}, new[] { 26, 26}, new[] { 1, 26}, new[] { 26, 1} };
     private bool _isMoving;
+    private bool _first = true;
 
     private void OnEnable()
     {
@@ -240,6 +241,12 @@ public class ChainStrikeClient : MonoBehaviour
         Debug.Log("set game");
         UIManger.Instance.SetGrid(game.Grid.Cells);
         UIManger.Instance.SetCharacters(game.Players);
+        if (_first)
+        {
+            UIManger.Instance.ResetEnergy();
+            UIManger.Instance.StartReceivingInput();
+        }
+        if (_first) _first = false;
     }
     
     #region Transactions

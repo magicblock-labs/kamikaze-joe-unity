@@ -73,16 +73,17 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
 
     public void StartReceivingInput()
     {
-        //inputManager.InputDetectionActive = true;
         gridCharacter.DisableInput = false;
     }
     
     public void StopReceivingInput()
     {
-        // gridCharacter.StopDetection();
-        // inputManager.InputDetectionActive = false;
-        // gridCharacter.StopDetection();
         gridCharacter.DisableInput = true;
+    }
+    
+    public void ResetEnergy()
+    {
+        gridCharacter.ResetEnergy();
     }
     
     private void CreateBlock(int x, int y)
@@ -157,8 +158,6 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
         {
             if (player.Address.Equals(Web3.Account.PublicKey))
             {
-                Debug.Log("Set current player");
-
                 var playerObject = levelManager.Players.ToArray()[0];
                 if (playerObject.MovementState.CurrentState == CharacterStates.MovementStates.Idle)
                 {
@@ -193,7 +192,6 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
             }
             else
             {
-                Debug.Log("Set other players");
                 InstantiatePlayer(player);
             }
         }
