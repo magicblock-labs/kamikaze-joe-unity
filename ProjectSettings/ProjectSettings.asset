@@ -12,8 +12,8 @@ PlayerSettings:
   targetDevice: 2
   useOnDemandResources: 0
   accelerometerFrequency: 60
-  companyName: DefaultCompany
-  productName: Chainstrike
+  companyName: Magicblock
+  productName: Kamikaze Joe
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.08362485, g: 0.067506224, b: 0.3490566, a: 1}
@@ -279,7 +279,7 @@ PlayerSettings:
   - m_BuildTarget: 
     m_Icons:
     - serializedVersion: 2
-      m_Icon: {fileID: 2800000, guid: 4181825fa9062284e9643d4626287a70, type: 3}
+      m_Icon: {fileID: 2800000, guid: 8836d40b103e345cdbfa2d2427d794a7, type: 3}
       m_Width: 128
       m_Height: 128
       m_Kind: 0
@@ -534,6 +534,8 @@ PlayerSettings:
     m_EncodingQuality: 1
   - m_BuildTarget: PS4
     m_EncodingQuality: 1
+  - m_BuildTarget: WebGL
+    m_EncodingQuality: 1
   m_BuildTargetGroupLightmapSettings: []
   m_BuildTargetNormalMapEncoding: []
   m_BuildTargetDefaultTextureCompressionFormat: []
@@ -772,7 +774,7 @@ PlayerSettings:
   blurSplashScreenBackground: 0
   spritePackerPolicy: 
   webGLMemorySize: 256
-  webGLExceptionSupport: 0
+  webGLExceptionSupport: 2
   webGLNameFilesAsHashes: 0
   webGLDataCaching: 0
   webGLDebugSymbols: 0
@@ -781,12 +783,12 @@ PlayerSettings:
   webGLTemplate: APPLICATION:Default
   webGLAnalyzeBuildSize: 0
   webGLUseEmbeddedResources: 0
-  webGLCompressionFormat: 1
+  webGLCompressionFormat: 2
   webGLWasmArithmeticExceptions: 0
   webGLLinkerTarget: 1
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 0
-  webGLPowerPreference: 2
+  webGLPowerPreference: 0
   scriptingDefineSymbols:
     Android: UNITY_POST_PROCESSING_STACK_V2;POSTPROCESSING_INSTALLED;CINEMACHINE_INSTALLED;PIXELPERFECT_INSTALLED;MOREMOUNTAINS_FEEDBACKS;MOREMOUNTAINS_TOOLS;MOREMOUNTAINS_INTERFACE;MOREMOUNTAINS_INVENTORYENGINE;MOREMOUNTAINS_TOPDOWNENGINE;MOREMOUNTAINS_POSTPROCESSING_INSTALLED;MOREMOUNTAINS_CINEMACHINE_INSTALLED;MOREMOUNTAINS_TEXTMESHPRO_INSTALLED;MOREMOUNTAINS_TOOLS_FOR_MMFEEDBACKS
     EmbeddedLinux: UNITY_POST_PROCESSING_STACK_V2
@@ -824,7 +826,7 @@ PlayerSettings:
     PS4: 1
     PS5: 1
     Stadia: 1
-    WebGL: 1
+    WebGL: 2
     Windows Store Apps: 1
     XboxOne: 1
     iPhone: 1
