@@ -1,22 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using System.Threading.Tasks;
-using Solana.Unity;
 using Solana.Unity.Programs.Abstract;
 using Solana.Unity.Programs.Utilities;
 using Solana.Unity.Rpc;
-using Solana.Unity.Rpc.Builders;
 using Solana.Unity.Rpc.Core.Http;
 using Solana.Unity.Rpc.Core.Sockets;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.Wallet;
-using Chainstrike;
 using Chainstrike.Program;
 using Chainstrike.Errors;
 using Chainstrike.Accounts;
 using Chainstrike.Types;
+
+// ReSharper disable once CheckNamespace
 
 namespace Chainstrike
 {
@@ -63,6 +61,37 @@ namespace Chainstrike
                 {
                     offset += Player.Deserialize(_data, offset, out var resultPlayersresultPlayersIdx);
                     result.Players[resultPlayersIdx] = resultPlayersresultPlayersIdx;
+                }
+
+                return result;
+            }
+        }
+
+        public partial class Matches
+        {
+            public static ulong ACCOUNT_DISCRIMINATOR => 14715191942542898288UL;
+            public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{112, 180, 245, 120, 27, 221, 54, 204};
+            public static string ACCOUNT_DISCRIMINATOR_B58 => "KrQ5Hnb29FR";
+            public PublicKey[] ActiveGames { get; set; }
+
+            public static Matches Deserialize(ReadOnlySpan<byte> _data)
+            {
+                int offset = 0;
+                ulong accountHashValue = _data.GetU64(offset);
+                offset += 8;
+                if (accountHashValue != ACCOUNT_DISCRIMINATOR)
+                {
+                    return null;
+                }
+
+                Matches result = new Matches();
+                int resultActiveGamesLength = (int)_data.GetU32(offset);
+                offset += 4;
+                result.ActiveGames = new PublicKey[resultActiveGamesLength];
+                for (uint resultActiveGamesIdx = 0; resultActiveGamesIdx < resultActiveGamesLength; resultActiveGamesIdx++)
+                {
+                    result.ActiveGames[resultActiveGamesIdx] = _data.GetPubKey(offset);
+                    offset += 32;
                 }
 
                 return result;
@@ -304,6 +333,17 @@ namespace Chainstrike
             return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Game>>(res, resultingAccounts);
         }
 
+        public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Matches>>> GetMatchessAsync(string programAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = Matches.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
+            var res = await RpcClient.GetProgramAccountsAsync(programAddress, commitment, memCmpList: list);
+            if (!res.WasSuccessful || !(res.Result?.Count > 0))
+                return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Matches>>(res);
+            List<Matches> resultingAccounts = new List<Matches>(res.Result.Count);
+            resultingAccounts.AddRange(res.Result.Select(result => Matches.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
+            return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Matches>>(res, resultingAccounts);
+        }
+
         public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<User>>> GetUsersAsync(string programAddress, Commitment commitment = Commitment.Finalized)
         {
             var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = User.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
@@ -318,10 +358,19 @@ namespace Chainstrike
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Game>> GetGameAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
         {
             var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
-            if (!res.WasSuccessful)
+            if (!res.WasSuccessful || res.Result?.Value?.Data == null)
                 return new Solana.Unity.Programs.Models.AccountResultWrapper<Game>(res);
             var resultingAccount = Game.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
             return new Solana.Unity.Programs.Models.AccountResultWrapper<Game>(res, resultingAccount);
+        }
+
+        public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Matches>> GetMatchesAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
+            if (!res.WasSuccessful)
+                return new Solana.Unity.Programs.Models.AccountResultWrapper<Matches>(res);
+            var resultingAccount = Matches.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
+            return new Solana.Unity.Programs.Models.AccountResultWrapper<Matches>(res, resultingAccount);
         }
 
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<User>> GetUserAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
@@ -340,6 +389,18 @@ namespace Chainstrike
                 Game parsingResult = null;
                 if (e.Value?.Data?.Count > 0)
                     parsingResult = Game.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
+                callback(s, e, parsingResult);
+            }, commitment);
+            return res;
+        }
+
+        public async Task<SubscriptionState> SubscribeMatchesAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, Matches> callback, Commitment commitment = Commitment.Finalized)
+        {
+            SubscriptionState res = await StreamingRpcClient.SubscribeAccountInfoAsync(accountAddress, (s, e) =>
+            {
+                Matches parsingResult = null;
+                if (e.Value?.Data?.Count > 0)
+                    parsingResult = Matches.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
                 callback(s, e, parsingResult);
             }, commitment);
             return res;
@@ -366,6 +427,12 @@ namespace Chainstrike
         public async Task<RequestResult<string>> SendInitializeGameAsync(InitializeGameAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
             Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.InitializeGame(accounts, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        public async Task<RequestResult<string>> SendInitializeMatchesAsync(InitializeMatchesAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.InitializeMatches(accounts, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
@@ -412,6 +479,17 @@ namespace Chainstrike
 
             public PublicKey Game { get; set; }
 
+            public PublicKey Matches { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class InitializeMatchesAccounts
+        {
+            public PublicKey Payer { get; set; }
+
+            public PublicKey Matches { get; set; }
+
             public PublicKey SystemProgram { get; set; }
         }
 
@@ -456,10 +534,23 @@ namespace Chainstrike
             public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeGame(InitializeGameAccounts accounts, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Creator, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Creator, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Matches == null ? programId : accounts.Matches, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(15529203708862021164UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeMatches(InitializeMatchesAccounts accounts, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Matches, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(6387215801362800407UL, offset);
                 offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);

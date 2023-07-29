@@ -37,6 +37,9 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
     
     [SerializeField]
     private GameObject explosionPrefab;
+    
+    [SerializeField]
+    private GameObject wonImage;
 
     private LevelManager _levelManager;
     private GameObject _healthBar;
@@ -72,12 +75,12 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
 
     public void StartReceivingInput()
     {
-        _gridCharacter.DisableInput = false;
+        if(_gridCharacter != null) _gridCharacter.DisableInput = false;
     }
     
     public void StopReceivingInput()
     {
-        _gridCharacter.DisableInput = true;
+        if(_gridCharacter != null) _gridCharacter.DisableInput = true;
     }
 
     public void ResetEnergy()
@@ -156,7 +159,7 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
             //enemy.transform.position = playerPos;
             StartCoroutine(MoveToSpot(enemy.transform, playerPos, 0.2f));
             var enemyInfo = enemy.GetComponent<Enemy>();
-            if (enemyInfo.energy - player.Energy > 10)
+            if (enemyInfo.energy - player.Energy > 15)
             {
                 var explosion = Instantiate(explosionPrefab, playerPos, Quaternion.identity);
                 Destroy(explosion, 5f);
@@ -213,11 +216,13 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
                     StopReceivingInput();
                     deathScreen.SetActive(true);
                     txtInfo.text = "You died! :( ";
+                    if (wonImage != null) wonImage.SetActive(false);
                 }
                 else
                 {
                     txtInfo.text = "";
                     deathScreen.SetActive(false);
+                    if (wonImage != null) wonImage.SetActive(false);
                 }
             }
             else
@@ -225,6 +230,14 @@ public class UIManger : MonoBehaviourSingleton<UIManger>
                 InstantiatePlayer(player);
             }
         }
+    }
+    
+    public void ShowWinningScreen()
+    {
+        deathScreen.SetActive(true);
+        txtInfo.text = "You WON! :D";
+        if (wonImage != null) wonImage.SetActive(true);
+        StopReceivingInput();
     }
 
     private int MapX(int x)

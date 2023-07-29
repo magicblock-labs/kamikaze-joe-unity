@@ -441,7 +441,10 @@ namespace MoreMountains.TopDownEngine
 					}
 					else
 					{
-						return;
+						if (!DisableInput && _currentDirection != GridDirections.None && _agentMoving == false)
+						{
+							ResetEnergy();
+						}
 					}
 				}
 				
@@ -471,7 +474,6 @@ namespace MoreMountains.TopDownEngine
 					{
 						_currentDirection = _bufferedDirection;
 						ResetEnergy();
-						Debug.Log("FULL ENERGY");
 					}
 				}
 
@@ -498,7 +500,6 @@ namespace MoreMountains.TopDownEngine
 					_energyDirection = _currentDirection;
 					if (_energy == EnergyToUse)
 					{	
-						//DisableInput = true;
 						OnGridMovementEvent?.Invoke(_currentDirection);
 					}
 					CurrentCellCoordinates = TargetGridPosition;
@@ -567,7 +568,6 @@ namespace MoreMountains.TopDownEngine
 				if (_energy <= 0) 
 				{
 					StopAllMovements();
-					DisableInput = true;
 					return;
 				}
 			}
