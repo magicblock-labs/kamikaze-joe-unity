@@ -74,6 +74,10 @@ public class ChainStrikeClient : MonoBehaviour
         {
             JoinGame(prevMatch).Forget();
         }
+        else
+        {
+            UIManger.Instance.ToogleMenu();
+        }
     }
 
 
@@ -206,7 +210,7 @@ public class ChainStrikeClient : MonoBehaviour
         var gameToJoin = await FindGameToJoin();
         if (gameToJoin != null)
         {
-            JoinGame(gameToJoin).Forget();
+            await JoinGame(gameToJoin);
         }
         if(gameToJoin == null) Debug.Log("Unable to find a game to join");
         Loading.StopLoading();
