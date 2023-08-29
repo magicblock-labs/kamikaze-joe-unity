@@ -1,22 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
+using Solana.Unity;
 using Solana.Unity.Programs.Abstract;
 using Solana.Unity.Programs.Utilities;
 using Solana.Unity.Rpc;
+using Solana.Unity.Rpc.Builders;
 using Solana.Unity.Rpc.Core.Http;
 using Solana.Unity.Rpc.Core.Sockets;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.Wallet;
-using Chainstrike.Program;
-using Chainstrike.Errors;
-using Chainstrike.Accounts;
-using Chainstrike.Types;
+using KamikazeJoe;
+using KamikazeJoe.Program;
+using KamikazeJoe.Errors;
+using KamikazeJoe.Accounts;
+using KamikazeJoe.Types;
 
-// ReSharper disable once CheckNamespace
-
-namespace Chainstrike
+namespace KamikazeJoe
 {
     namespace Accounts
     {
@@ -25,11 +27,17 @@ namespace Chainstrike
             public static ulong ACCOUNT_DISCRIMINATOR => 1331205435963103771UL;
             public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{27, 90, 166, 125, 74, 100, 121, 18};
             public static string ACCOUNT_DISCRIMINATOR_B58 => "5aNQXizG8jB";
-            public long CreatedAt { get; set; }
+            public byte Width { get; set; }
+
+            public byte Height { get; set; }
+
+            public byte Seed { get; set; }
+
+            public ulong TicketPrice { get; set; }
+
+            public bool PrizeClaimed { get; set; }
 
             public PublicKey Owner { get; set; }
-
-            public Grid Grid { get; set; }
 
             public GameState GameState { get; set; }
 
@@ -46,12 +54,18 @@ namespace Chainstrike
                 }
 
                 Game result = new Game();
-                result.CreatedAt = _data.GetS64(offset);
+                result.Width = _data.GetU8(offset);
+                offset += 1;
+                result.Height = _data.GetU8(offset);
+                offset += 1;
+                result.Seed = _data.GetU8(offset);
+                offset += 1;
+                result.TicketPrice = _data.GetU64(offset);
                 offset += 8;
+                result.PrizeClaimed = _data.GetBool(offset);
+                offset += 1;
                 result.Owner = _data.GetPubKey(offset);
                 offset += 32;
-                offset += Grid.Deserialize(_data, offset, out var resultGrid);
-                result.Grid = resultGrid;
                 offset += GameState.Deserialize(_data, offset, out var resultGameState);
                 result.GameState = resultGameState;
                 int resultPlayersLength = (int)_data.GetU32(offset);
@@ -107,6 +121,8 @@ namespace Chainstrike
 
             public ulong Games { get; set; }
 
+            public ulong Won { get; set; }
+
             public static User Deserialize(ReadOnlySpan<byte> _data)
             {
                 int offset = 0;
@@ -126,6 +142,28 @@ namespace Chainstrike
 
                 result.Games = _data.GetU64(offset);
                 offset += 8;
+                result.Won = _data.GetU64(offset);
+                offset += 8;
+                return result;
+            }
+        }
+
+        public partial class Vault
+        {
+            public static ulong ACCOUNT_DISCRIMINATOR => 8607953397882554579UL;
+            public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{211, 8, 232, 43, 2, 152, 117, 119};
+            public static string ACCOUNT_DISCRIMINATOR_B58 => "cJJWPqNMczr";
+            public static Vault Deserialize(ReadOnlySpan<byte> _data)
+            {
+                int offset = 0;
+                ulong accountHashValue = _data.GetU64(offset);
+                offset += 8;
+                if (accountHashValue != ACCOUNT_DISCRIMINATOR)
+                {
+                    return null;
+                }
+
+                Vault result = new Vault();
                 return result;
             }
         }
@@ -133,56 +171,21 @@ namespace Chainstrike
 
     namespace Errors
     {
-        public enum ChainstrikeErrorKind : uint
+        public enum KamikazeJoeErrorKind : uint
         {
-            GameEnded = 6000U,
-            PlayerNotFound = 6001U,
-            NotValidEnergy = 6002U,
-            MovingIntoNotEmptyCell = 6003U,
-            InvalidMovement = 6004U
+            InvalidSize = 6000U,
+            GameEnded = 6001U,
+            PlayerNotFound = 6002U,
+            NotValidEnergy = 6003U,
+            MovingIntoNotEmptyCell = 6004U,
+            InvalidMovement = 6005U,
+            InvalidJoin = 6006U,
+            InvalidClaim = 6007U
         }
     }
 
     namespace Types
     {
-        public partial class Grid
-        {
-            public Cell[][] Cells { get; set; }
-
-            public int Serialize(byte[] _data, int initialOffset)
-            {
-                int offset = initialOffset;
-                foreach (var cellsElement in Cells)
-                {
-                    foreach (var cellsElementElement in cellsElement)
-                    {
-                        _data.WriteU8((byte)cellsElementElement, offset);
-                        offset += 1;
-                    }
-                }
-
-                return offset - initialOffset;
-            }
-
-            public static int Deserialize(ReadOnlySpan<byte> _data, int initialOffset, out Grid result)
-            {
-                int offset = initialOffset;
-                result = new Grid();
-                result.Cells = new Cell[28][];
-                for (uint resultCellsIdx = 0; resultCellsIdx < 28; resultCellsIdx++)
-                {
-                    result.Cells[resultCellsIdx] = new Cell[28];
-                    for (uint resultCellsresultCellsIdxIdx = 0; resultCellsresultCellsIdxIdx < 28; resultCellsresultCellsIdxIdx++)
-                    {
-                        result.Cells[resultCellsIdx][resultCellsresultCellsIdxIdx] = (Cell)_data.GetU8(offset);
-                        offset += 1;
-                    }
-                }
-
-                return offset - initialOffset;
-            }
-        }
-
         public partial class Player
         {
             public byte X { get; set; }
@@ -316,9 +319,9 @@ namespace Chainstrike
         }
     }
 
-    public partial class ChainstrikeClient : TransactionalBaseClient<ChainstrikeErrorKind>
+    public partial class KamikazeJoeClient : TransactionalBaseClient<KamikazeJoeErrorKind>
     {
-        public ChainstrikeClient(IRpcClient rpcClient, IStreamingRpcClient streamingRpcClient, PublicKey programId) : base(rpcClient, streamingRpcClient, programId)
+        public KamikazeJoeClient(IRpcClient rpcClient, IStreamingRpcClient streamingRpcClient, PublicKey programId) : base(rpcClient, streamingRpcClient, programId)
         {
         }
 
@@ -355,10 +358,21 @@ namespace Chainstrike
             return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<User>>(res, resultingAccounts);
         }
 
+        public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Vault>>> GetVaultsAsync(string programAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = Vault.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
+            var res = await RpcClient.GetProgramAccountsAsync(programAddress, commitment, memCmpList: list);
+            if (!res.WasSuccessful || !(res.Result?.Count > 0))
+                return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Vault>>(res);
+            List<Vault> resultingAccounts = new List<Vault>(res.Result.Count);
+            resultingAccounts.AddRange(res.Result.Select(result => Vault.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
+            return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Vault>>(res, resultingAccounts);
+        }
+
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Game>> GetGameAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
         {
             var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
-            if (!res.WasSuccessful || res.Result?.Value?.Data == null)
+            if (!res.WasSuccessful)
                 return new Solana.Unity.Programs.Models.AccountResultWrapper<Game>(res);
             var resultingAccount = Game.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
             return new Solana.Unity.Programs.Models.AccountResultWrapper<Game>(res, resultingAccount);
@@ -380,6 +394,15 @@ namespace Chainstrike
                 return new Solana.Unity.Programs.Models.AccountResultWrapper<User>(res);
             var resultingAccount = User.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
             return new Solana.Unity.Programs.Models.AccountResultWrapper<User>(res, resultingAccount);
+        }
+
+        public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Vault>> GetVaultAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
+            if (!res.WasSuccessful)
+                return new Solana.Unity.Programs.Models.AccountResultWrapper<Vault>(res);
+            var resultingAccount = Vault.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
+            return new Solana.Unity.Programs.Models.AccountResultWrapper<Vault>(res, resultingAccount);
         }
 
         public async Task<SubscriptionState> SubscribeGameAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, Game> callback, Commitment commitment = Commitment.Finalized)
@@ -418,45 +441,63 @@ namespace Chainstrike
             return res;
         }
 
+        public async Task<SubscriptionState> SubscribeVaultAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, Vault> callback, Commitment commitment = Commitment.Finalized)
+        {
+            SubscriptionState res = await StreamingRpcClient.SubscribeAccountInfoAsync(accountAddress, (s, e) =>
+            {
+                Vault parsingResult = null;
+                if (e.Value?.Data?.Count > 0)
+                    parsingResult = Vault.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
+                callback(s, e, parsingResult);
+            }, commitment);
+            return res;
+        }
+
         public async Task<RequestResult<string>> SendInitializeUserAsync(InitializeUserAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.InitializeUser(accounts, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.InitializeUser(accounts, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
-        public async Task<RequestResult<string>> SendInitializeGameAsync(InitializeGameAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        public async Task<RequestResult<string>> SendInitializeGameAsync(InitializeGameAccounts accounts, byte? width, byte? height, byte? arenaSeed, ulong? pricePoolLamports, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.InitializeGame(accounts, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.InitializeGame(accounts, width, height, arenaSeed, pricePoolLamports, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
-        public async Task<RequestResult<string>> SendInitializeMatchesAsync(InitializeMatchesAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        public async Task<RequestResult<string>> SendInitializeAsync(InitializeAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.InitializeMatches(accounts, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.Initialize(accounts, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
         public async Task<RequestResult<string>> SendJoinGameAsync(JoinGameAccounts accounts, byte x, byte y, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.JoinGame(accounts, x, y, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.JoinGame(accounts, x, y, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
         public async Task<RequestResult<string>> SendMakeMoveAsync(MakeMoveAccounts accounts, Facing direction, byte energy, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.MakeMove(accounts, direction, energy, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.MakeMove(accounts, direction, energy, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
         public async Task<RequestResult<string>> SendExplodeAsync(ExplodeAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.ChainstrikeProgram.Explode(accounts, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.Explode(accounts, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
-        protected override Dictionary<uint, ProgramError<ChainstrikeErrorKind>> BuildErrorsDictionary()
+        public async Task<RequestResult<string>> SendClaimPrizeAsync(ClaimPrizeAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            return new Dictionary<uint, ProgramError<ChainstrikeErrorKind>>{{6000U, new ProgramError<ChainstrikeErrorKind>(ChainstrikeErrorKind.GameEnded, "Unable to join a game that ended")}, {6001U, new ProgramError<ChainstrikeErrorKind>(ChainstrikeErrorKind.PlayerNotFound, "Player is not part of this game")}, {6002U, new ProgramError<ChainstrikeErrorKind>(ChainstrikeErrorKind.NotValidEnergy, "Energy is not a valid value")}, {6003U, new ProgramError<ChainstrikeErrorKind>(ChainstrikeErrorKind.MovingIntoNotEmptyCell, "Unable to move into a not empty cell")}, {6004U, new ProgramError<ChainstrikeErrorKind>(ChainstrikeErrorKind.InvalidMovement, "This movement is not valid")}, };
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.ClaimPrize(accounts, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        protected override Dictionary<uint, ProgramError<KamikazeJoeErrorKind>> BuildErrorsDictionary()
+        {
+            return new Dictionary<uint, ProgramError<KamikazeJoeErrorKind>>{{6000U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidSize, "Invalid Grid size")}, {6001U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.GameEnded, "Unable to join a game that ended")}, {6002U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.PlayerNotFound, "Player is not part of this game")}, {6003U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.NotValidEnergy, "Energy is not a valid value")}, {6004U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.MovingIntoNotEmptyCell, "Unable to move into a not empty cell")}, {6005U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidMovement, "This movement is not valid")}, {6006U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidJoin, "This position is not valid for joining the game")}, {6007U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidClaim, "Price can't be claimed")}, };
         }
     }
 
@@ -484,11 +525,13 @@ namespace Chainstrike
             public PublicKey SystemProgram { get; set; }
         }
 
-        public class InitializeMatchesAccounts
+        public class InitializeAccounts
         {
             public PublicKey Payer { get; set; }
 
             public PublicKey Matches { get; set; }
+
+            public PublicKey Vault { get; set; }
 
             public PublicKey SystemProgram { get; set; }
         }
@@ -500,6 +543,10 @@ namespace Chainstrike
             public PublicKey User { get; set; }
 
             public PublicKey Game { get; set; }
+
+            public PublicKey Vault { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
         }
 
         public class MakeMoveAccounts
@@ -516,7 +563,20 @@ namespace Chainstrike
             public PublicKey Game { get; set; }
         }
 
-        public static class ChainstrikeProgram
+        public class ClaimPrizeAccounts
+        {
+            public PublicKey Player { get; set; }
+
+            public PublicKey User { get; set; }
+
+            public PublicKey Game { get; set; }
+
+            public PublicKey Vault { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public static class KamikazeJoeProgram
         {
             public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeUser(InitializeUserAccounts accounts, PublicKey programId)
             {
@@ -531,7 +591,7 @@ namespace Chainstrike
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
-            public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeGame(InitializeGameAccounts accounts, PublicKey programId)
+            public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeGame(InitializeGameAccounts accounts, byte? width, byte? height, byte? arenaSeed, ulong? pricePoolLamports, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
                 {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Creator, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Matches == null ? programId : accounts.Matches, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
@@ -539,18 +599,70 @@ namespace Chainstrike
                 int offset = 0;
                 _data.WriteU64(15529203708862021164UL, offset);
                 offset += 8;
+                if (width != null)
+                {
+                    _data.WriteU8(1, offset);
+                    offset += 1;
+                    _data.WriteU8(width.Value, offset);
+                    offset += 1;
+                }
+                else
+                {
+                    _data.WriteU8(0, offset);
+                    offset += 1;
+                }
+
+                if (height != null)
+                {
+                    _data.WriteU8(1, offset);
+                    offset += 1;
+                    _data.WriteU8(height.Value, offset);
+                    offset += 1;
+                }
+                else
+                {
+                    _data.WriteU8(0, offset);
+                    offset += 1;
+                }
+
+                if (arenaSeed != null)
+                {
+                    _data.WriteU8(1, offset);
+                    offset += 1;
+                    _data.WriteU8(arenaSeed.Value, offset);
+                    offset += 1;
+                }
+                else
+                {
+                    _data.WriteU8(0, offset);
+                    offset += 1;
+                }
+
+                if (pricePoolLamports != null)
+                {
+                    _data.WriteU8(1, offset);
+                    offset += 1;
+                    _data.WriteU64(pricePoolLamports.Value, offset);
+                    offset += 8;
+                }
+                else
+                {
+                    _data.WriteU8(0, offset);
+                    offset += 1;
+                }
+
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
-            public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeMatches(InitializeMatchesAccounts accounts, PublicKey programId)
+            public static Solana.Unity.Rpc.Models.TransactionInstruction Initialize(InitializeAccounts accounts, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Matches, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Matches, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
-                _data.WriteU64(6387215801362800407UL, offset);
+                _data.WriteU64(17121445590508351407UL, offset);
                 offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
@@ -560,7 +672,7 @@ namespace Chainstrike
             public static Solana.Unity.Rpc.Models.TransactionInstruction JoinGame(JoinGameAccounts accounts, byte x, byte y, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(9240450992125931627UL, offset);
@@ -598,6 +710,19 @@ namespace Chainstrike
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(17851550339501723000UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ClaimPrize(ClaimPrizeAccounts accounts, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(16999468971785447837UL, offset);
                 offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);

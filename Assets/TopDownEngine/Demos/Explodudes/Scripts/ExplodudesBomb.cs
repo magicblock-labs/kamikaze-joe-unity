@@ -256,13 +256,13 @@ namespace MoreMountains.TopDownEngine
 			float hitDistance = hit.distance;
 
 			// if what we find has a Health component, it's gonna be destroyed and needs to be covered by the explosion
-			if (hit.collider.gameObject.MMFGetComponentNoAlloc<Health>() != null)
+			if (hit.collider != null && hit.collider.gameObject.MMFGetComponentNoAlloc<Health>() != null)
 			{
 				hitDistance += GridManager.Instance.GridUnitSize;
 			}
 
 			// if what we find has a Bomb component, it's gonna be destroyed and needs to be covered by the explosion
-			_otherBomb = hit.collider.gameObject.MMFGetComponentNoAlloc<ExplodudesBomb>();
+			if(hit.collider != null) _otherBomb = hit.collider.gameObject.MMFGetComponentNoAlloc<ExplodudesBomb>();
 			if ((_otherBomb != null) && (hitDistance <= BombDistanceInGridUnits))
 			{
 				hitDistance += GridManager.Instance.GridUnitSize;

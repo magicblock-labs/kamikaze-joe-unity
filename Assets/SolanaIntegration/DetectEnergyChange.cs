@@ -3,6 +3,8 @@ using MoreMountains.TopDownEngine;
 using UnityEngine;
 using UnityEngine.UI;
 
+// ReSharper disable once CheckNamespace
+
 public class DetectEnergyChange : MonoBehaviour
 {
 

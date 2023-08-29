@@ -2,6 +2,7 @@
 using UnityEngine;
 using System.Collections;
 using MoreMountains.Tools;
+using UnityEngine.Serialization;
 
 namespace MoreMountains.TopDownEngine
 {	
@@ -21,6 +22,12 @@ namespace MoreMountains.TopDownEngine
 		public enum InputModes { InputManager, Script }
 		/// the possible modes
 		public enum DimensionModes { TwoD, ThreeD }
+		
+		[Tooltip("The Grid width")]
+		public int width = 15;
+		
+		[Tooltip("The Grid Height")]
+		public int height = 15;
 
 		[Header("Movement")]
 
@@ -482,7 +489,7 @@ namespace MoreMountains.TopDownEngine
 				DetermineEndPosition();
 
 				// we make sure the target cell is free
-				if (GridManager.Instance.CellIsOccupied(TargetGridPosition))
+				if (GridManager.Instance.CellIsOccupied(TargetGridPosition) || OutOfGridBounds(TargetGridPosition))
 				{
 					_movingToNextGridUnit = false;
 					_currentDirection = GridDirections.None;
@@ -737,6 +744,15 @@ namespace MoreMountains.TopDownEngine
 		public void ResetEnergy()
 		{
 			_energy = EnergyToUse;
+		}
+		
+		// Check if position if out of grid bounds
+		private bool OutOfGridBounds(Vector3Int targetGridPosition)
+		{
+			return targetGridPosition.x >= width 
+			       || targetGridPosition.x < -width 
+			       || targetGridPosition.z >= height - 1 
+			       || targetGridPosition.z <= -height;
 		}
 	}
 }

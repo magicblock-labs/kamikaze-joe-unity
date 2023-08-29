@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Chainstrike;
-using Chainstrike.Accounts;
-using Chainstrike.Program;
-using Chainstrike.Types;
 using Cysharp.Threading.Tasks;
+using KamikazeJoe;
+using KamikazeJoe.Accounts;
+using KamikazeJoe.Program;
+using KamikazeJoe.Types;
 using MoreMountains.Tools;
 using MoreMountains.TopDownEngine;
 using Solana.Unity.Programs;
@@ -18,6 +18,7 @@ using Solana.Unity.Rpc.Models;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.SDK;
 using Solana.Unity.Wallet;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Random = System.Random;
@@ -37,18 +38,30 @@ public class ChainStrikeClient : MonoBehaviour
     
     [SerializeField]
     private MMTouchButton publicCheckBox;
-
-    private Toast _toast;
+    
+    [SerializeField]
+    private TMP_InputField txtArenaSize;
+    
+    [SerializeField]
+    private TMP_InputField txtPricePool;
+    
+    
     private PublicKey _gameInstanceId;
     
     private readonly PublicKey _chainStrikeProgramId = new("JoeXD3mj5VXB2xKUz6jJ8D2AC72pXCydA6fnQJg2JiG");
     //private readonly PublicKey _chainStrikeProgramId = new("3ARzo1BnheocchBNMxEo5f86nZ7MkyyiSgZGBn6WBxPf");
     
-    private ChainstrikeClient _chainstrikeClient;
-    private ChainstrikeClient ChainstrikeClient => _chainstrikeClient ??= 
-        new ChainstrikeClient(Web3.Rpc, Web3.WsRpc, _chainStrikeProgramId);
+    private KamikazeJoeClient _chainstrikeClient;
+    private KamikazeJoeClient ChainstrikeClient => _chainstrikeClient ??= 
+        new KamikazeJoeClient(Web3.Rpc, Web3.WsRpc, _chainStrikeProgramId);
 
-    private static readonly int[][] spawnPoints = new int[][] { new[] { 1, 1}, new[] { 26, 26}, new[] { 1, 26}, new[] { 26, 1} };
+    private static readonly int[][] SpawnPoints = {
+        new[] { 1, 1}, new[] { 27, 26},
+        new[] { 1, 26}, new[] { 26, 1},
+        new[] { 1, 15}, new[] { 26, 15},
+        new[] { 7, 7}, new[] { 3, 3},
+        new[] { 1, 15}, new[] { 26, 15} 
+    };
     private bool _isMoving;
     private bool _initPlayer = true;
     private Facing _prevMove;
@@ -101,12 +114,21 @@ public class ChainStrikeClient : MonoBehaviour
         if (newGameBtn != null) newGameBtn.onClick.AddListener(CallCreateGame);
         if (joinGameBtn != null) joinGameBtn.onClick.AddListener(CallJoinGame);
         if (joinRandomArenaBtn != null) joinRandomArenaBtn.onClick.AddListener(CallJoinRandomArena);
-        _toast = GetComponent<Toast>();
+        //_toast = GetComponent<Toast>();
+        txtArenaSize.onEndEdit.AddListener(ClampArenaSize);
     }
-    
+
     private void CallCreateGame()
     {
-        CreateGame().Forget();
+        if (!int.TryParse(txtArenaSize.text, out int arenaSize))
+        {
+            arenaSize = 30;
+        }
+        if (!float.TryParse(txtPricePool.text, out float pricePool))
+        {
+            pricePool = 0;
+        }
+        CreateGame(arenaSize, (ulong)(pricePool * Math.Pow(10, 9))).Forget();
     }
     
     private void CallJoinGame()
@@ -122,7 +144,8 @@ public class ChainStrikeClient : MonoBehaviour
 
     private async UniTask ReloadGame()
     {
-        var game = (await ChainstrikeClient.GetGameAsync(_gameInstanceId, Commitment.Confirmed)).ParsedResult;
+        Debug.Log("Reloading game");
+        var game = (await ChainstrikeClient.GetGameAsync(_gameInstanceId, Commitment.Processed)).ParsedResult;
         SetGame(game);
     }
 
@@ -155,7 +178,7 @@ public class ChainStrikeClient : MonoBehaviour
         Debug.Log($"Game Id: {gameId}");
     }
     
-    private async UniTask CreateGame()
+    private async UniTask CreateGame(int arenaSize, ulong pricePoolLamports)
     {
         if(Web3.Account == null) return;
         Loading.StartLoading();
@@ -175,7 +198,11 @@ public class ChainStrikeClient : MonoBehaviour
             gamePdaIdx++;
         }
         Debug.Log($"Sending transaction new Game");
-        var res = await CreateGameTransaction(gamePda, publicMatch: publicCheckBox == null || publicCheckBox.GetComponent<Image>().sprite.name.Equals("CheckboxOff"));
+        var res = await CreateGameTransaction(
+            gamePda, 
+            publicMatch: publicCheckBox == null || publicCheckBox.GetComponent<Image>().sprite.name.Equals("CheckboxOff"),
+            arenaSize,
+            pricePoolLamports);
         Debug.Log($"Signature: {res.Result}");
         if (res.WasSuccessful)
         {
@@ -216,6 +243,22 @@ public class ChainStrikeClient : MonoBehaviour
         Loading.StopLoading();
     }
     
+    private async UniTask ClaimReward(string gameId)
+    {
+        if(Web3.Account == null) return;
+        var game = (await ChainstrikeClient.GetGameAsync(gameId, Commitment.Confirmed)).ParsedResult;
+        if(game == null) return;
+        if(game.TicketPrice == 0 || game.PrizeClaimed) return;
+
+        var res = await ClaimRewardTransaction();
+        Debug.Log($"Signature: {res.Result}");
+        if (res.WasSuccessful)
+        {
+            await Web3.Rpc.ConfirmTransaction(res.Result, Commitment.Confirmed);
+        }
+        Debug.Log("Claimed Reward");
+    }
+    
     private async UniTask MakeMove(Facing facing, int energy, int retry = 5)
     {
         if(Web3.Account == null) return;
@@ -226,11 +269,11 @@ public class ChainStrikeClient : MonoBehaviour
         _isMoving = true; 
         _prevMove = facing;
         var res = await MakeMoveTransaction(facing, energy, useCache: retry == 5 && facing != _prevMove);
-        _prevMove = facing;
         Debug.Log($"Signature: {res.Result}");
         if (res.WasSuccessful)
         {
             await Web3.Rpc.ConfirmTransaction(res.Result, Commitment.Confirmed);
+            _prevMove = facing;
             Debug.Log("Made a move");
         }
         else
@@ -247,7 +290,8 @@ public class ChainStrikeClient : MonoBehaviour
                 await ReloadGame(); 
             }
         }
-        await ReloadGame(); 
+        await UIManger.Instance.WaitCharacterIdle();
+        await ReloadGame();
         Loading.StopLoadingSmall();
         _isMoving = false;
         UIManger.Instance.StartReceivingInput();
@@ -287,23 +331,30 @@ public class ChainStrikeClient : MonoBehaviour
     {
         Debug.Log("set game");
         if (_initPlayer) UIManger.Instance.ResetLevel();
-        UIManger.Instance.SetGrid(game.Grid.Cells);
+        UIManger.Instance.SetGrid(BuildCells(game.Width, game.Height, game.Seed));
         UIManger.Instance.SetCharacters(game.Players);
         if (_initPlayer)
         {
             UIManger.Instance.ResetEnergy();
             UIManger.Instance.StartReceivingInput();
+            var pricePool = game.TicketPrice / Math.Pow(10, 9) * 0.9;
+            UIManger.Instance.SetPrizePool((float)Math.Round(pricePool, 2));
             _initPlayer = false;
         }
         if(game.GameState?.Type == GameStateType.Won && game.GameState.WonValue.Winner == Web3.Account?.PublicKey)
         {
             UIManger.Instance.ShowWinningScreen();
+            ClaimReward(_gameInstanceId).Forget();
         }
     }
     
     #region Transactions
 
-    private async Task<RequestResult<string>> CreateGameTransaction(string gameId, bool publicMatch = true)
+    private async Task<RequestResult<string>> CreateGameTransaction(
+        string gameId, 
+        bool publicMatch = true, 
+        int arenaSize = 30, 
+        ulong pricePoolLamports = 0)
     {
         var tx = new Transaction()
         {
@@ -315,17 +366,19 @@ public class ChainStrikeClient : MonoBehaviour
         var userPda = FindUserPda(Web3.Account);
         
         var matchesPda = FindMatchesPda();
+        var vaultPda = FindVaultPda();
         
-        if (!await IsPdaInitialized(FindMatchesPda()))
+        if (!await IsPdaInitialized(matchesPda))
         {
-            var matchesInitUser = new InitializeMatchesAccounts()
+            var initializeAccounts = new InitializeAccounts()
             {
                 Payer = Web3.Account,
                 Matches = matchesPda,
+                Vault = vaultPda,
                 SystemProgram = SystemProgram.ProgramIdKey
             };
-            var initMatchesIx = ChainstrikeProgram.InitializeMatches(accounts: matchesInitUser, _chainStrikeProgramId);
-            tx.Add(initMatchesIx);
+            var initIx = KamikazeJoeProgram.Initialize(accounts: initializeAccounts, _chainStrikeProgramId);
+            tx.Add(initIx);
         }
         
         if (!await IsPdaInitialized(userPda))
@@ -336,7 +389,7 @@ public class ChainStrikeClient : MonoBehaviour
                 User = userPda,
                 SystemProgram = SystemProgram.ProgramIdKey
             };
-            var initUserIx = ChainstrikeProgram.InitializeUser(accounts: accountsInitUser, _chainStrikeProgramId);
+            var initUserIx = KamikazeJoeProgram.InitializeUser(accounts: accountsInitUser, _chainStrikeProgramId);
             tx.Add(initUserIx);
         }
 
@@ -351,7 +404,14 @@ public class ChainStrikeClient : MonoBehaviour
                 Matches = publicMatch ? FindMatchesPda() : null,
                 SystemProgram = SystemProgram.ProgramIdKey
             };
-            var initGameIx = ChainstrikeProgram.InitializeGame(accounts: accountsInitGame, _chainStrikeProgramId);
+            var initGameIx = KamikazeJoeProgram.InitializeGame(
+                accounts: accountsInitGame, 
+                (byte?)arenaSize,
+                (byte?)arenaSize,
+                null,
+                (ulong?)pricePoolLamports,
+                _chainStrikeProgramId
+            );
             tx.Add(initGameIx);
         }
         
@@ -360,16 +420,28 @@ public class ChainStrikeClient : MonoBehaviour
             Player = Web3.Account,
             User = userPda,
             Game = gamePda,
+            Vault = FindVaultPda(),
+            SystemProgram = SystemProgram.ProgramIdKey
         };
 
-        var r = new Random();
-        var spawnPoint = spawnPoints[r.Next(0, spawnPoints.Length)];
-        var joinGameIx = ChainstrikeProgram.JoinGame(accounts: joinGameAccounts, (byte) spawnPoint[0], (byte) spawnPoint[1], _chainStrikeProgramId);
+        var spawnPoint = FindValidSpawnPoint(30, 30, 0);
+        var joinGameIx = KamikazeJoeProgram.JoinGame(accounts: joinGameAccounts, (byte) spawnPoint[0], (byte) spawnPoint[1], _chainStrikeProgramId);
         tx.Instructions.Add(joinGameIx);
         
         return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Confirmed);
     }
-    
+
+    private int[] FindValidSpawnPoint(int width, int height, uint seed)
+    {
+        var r = new Random();
+        var point = SpawnPoints[r.Next(0, SpawnPoints.Length)];
+        while (!IsValidCell(point[0], point[1], width, height, seed))
+        {
+            point = SpawnPoints[r.Next(0, SpawnPoints.Length)];
+        }
+        return point;
+    }
+
     private async Task<RequestResult<string>> MakeMoveTransaction(Facing facing, int energy, bool useCache = true)
     {
         var tx = new Transaction()
@@ -384,12 +456,12 @@ public class ChainStrikeClient : MonoBehaviour
             Player = Web3.Account,
             Game = _gameInstanceId
         };
-        var movePieceIx = ChainstrikeProgram.MakeMove(accounts, facing, (byte) energy, _chainStrikeProgramId);
+        var movePieceIx = KamikazeJoeProgram.MakeMove(accounts, facing, (byte) energy, _chainStrikeProgramId);
         
         //tx.Instructions.Add(ComputeBudgetProgram.SetComputeUnitLimit(600000));
         tx.Instructions.Add(movePieceIx);
         
-        return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Confirmed);
+        return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Finalized);
     }
     
     private async Task<RequestResult<string>> MakeExplosionTransaction()
@@ -398,7 +470,7 @@ public class ChainStrikeClient : MonoBehaviour
         {
             FeePayer = Web3.Account,
             Instructions = new List<TransactionInstruction>(),
-            RecentBlockHash = await Web3.BlockHash(useCache: false)
+            RecentBlockHash = await Web3.BlockHash(commitment: Commitment.Finalized, useCache: false)
         };
         
         var accounts = new ExplodeAccounts()
@@ -406,10 +478,34 @@ public class ChainStrikeClient : MonoBehaviour
             Player = Web3.Account,
             Game = _gameInstanceId
         };
-        var explodeIx = ChainstrikeProgram.Explode(accounts, _chainStrikeProgramId);
+        var explodeIx = KamikazeJoeProgram.Explode(accounts, _chainStrikeProgramId);
         
         //tx.Instructions.Add(ComputeBudgetProgram.SetComputeUnitLimit(600000));
         tx.Instructions.Add(explodeIx);
+        
+        return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Finalized);
+    }
+    
+    private async Task<RequestResult<string>> ClaimRewardTransaction()
+    {
+        var tx = new Transaction()
+        {
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = await Web3.BlockHash(commitment: Commitment.Finalized, useCache: false)
+        };
+
+        var claimPrizeAccounts = new ClaimPrizeAccounts()
+        {
+            Player = Web3.Account,
+            User = FindUserPda(Web3.Account),
+            Game = _gameInstanceId,
+            Vault = FindVaultPda(),
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+        
+        var claimPrizeIx = KamikazeJoeProgram.ClaimPrize(accounts: claimPrizeAccounts, _chainStrikeProgramId);
+        tx.Instructions.Add(claimPrizeIx);
         
         return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Confirmed);
     }
@@ -430,7 +526,8 @@ public class ChainStrikeClient : MonoBehaviour
                 var game = await ChainstrikeClient.GetGameAsync(activeGame);
                 if(game != null && game.WasSuccessful && game.ParsedResult != null
                    && game.ParsedResult.GameState.Type is GameStateType.Active or GameStateType.Waiting
-                   && !game.ParsedResult.Players.Select(p => p.Address).Contains(Web3.Account.PublicKey))
+                   && !game.ParsedResult.Players.Select(p => p.Address).Contains(Web3.Account.PublicKey)
+                   && game.ParsedResult.Players.Length < 10)
                 {
                     gameToJoin = activeGame;
                     break;
@@ -459,7 +556,7 @@ public class ChainStrikeClient : MonoBehaviour
     {
         PublicKey.TryFindProgramAddress(new[]
         {
-            Encoding.UTF8.GetBytes("user"), accountPublicKey
+            Encoding.UTF8.GetBytes("userPda"), accountPublicKey
         }, _chainStrikeProgramId, out var pda, out _);
         return pda;
     }
@@ -471,6 +568,103 @@ public class ChainStrikeClient : MonoBehaviour
             Encoding.UTF8.GetBytes("matches")
         }, _chainStrikeProgramId, out var pda, out _);
         return pda;
+    }
+    
+    private PublicKey FindVaultPda()
+    {
+        PublicKey.TryFindProgramAddress(new[]
+        {
+            Encoding.UTF8.GetBytes("vault")
+        }, _chainStrikeProgramId, out var pda, out _);
+        return pda;
+    }
+
+    #endregion
+    
+    #region Build Grid
+
+    private Cell[][] BuildCells(uint width, uint height, uint seed)
+    {
+        Cell[][] cells = new Cell[height][];
+        for (int x = 0; x < width; x++)
+        {
+            cells[x] = new Cell[height];
+            for (int y = 0; y < height; y++)
+            {
+                if (x < width && y < height && IsRecharger(x, y, seed))
+                {
+                    cells[x][y] = Cell.Recharge;
+                }
+                else if (x < width && y < height && IsBlock(x, y, seed))
+                {
+                    cells[x][y] = Cell.Block;
+                }
+                else
+                {
+                    cells[x][y] = Cell.Empty;
+                }
+            }
+        }
+        return cells;
+    }
+
+    private bool IsValidCell(int x, int y, int width, int height, uint seed)
+    {
+        return x < width && y < height && (IsRecharger(x, y, seed) || !IsBlock(x, y, seed));
+    }
+
+    private bool IsRecharger(int x, int y, uint seed)
+    {  
+        uint shift = seed % 14;
+        long xPlusShift = x + shift;
+        long yMinusShift = y - shift;
+
+        long xMod13 = xPlusShift % 13;
+        long yMod14 = yMinusShift % 14;
+        long xMod28 = xPlusShift % 28;
+        long yMod28 = yMinusShift % 28;
+
+        return xMod13 == yMod14
+               && (xMod28 is 27 || xPlusShift == 1)
+               && xPlusShift != yMinusShift 
+               && xMod28 - yMod28 < 15;
+    }
+
+    private bool IsBlock(int x, int y, uint seed)
+    {
+        uint len = 4 + seed % 6;
+        int xMod28 = x % 28;
+        int yMod28 = y % 28;
+
+        if ((yMod28 == 5 && xMod28 > 3 && xMod28 < 3 + len) ||
+            (yMod28 == 23 && xMod28 > 7 && xMod28 < 7 + Math.Max(5, len)) ||
+            (yMod28 == 12 && xMod28 > 12 && xMod28 < 12 + len) ||
+            (xMod28 == 19 && yMod28 > 12 && yMod28 < 12 + Math.Max(5, len)))
+        {
+            return true;
+        }
+
+        int xSquaredPlusY = x * x + x * y;
+        int ySquared = y * y;
+        uint divisor = 47 % 60 - seed % 59;
+        long remainder = (xSquaredPlusY + ySquared + seed) % divisor;
+
+        return remainder == 7;
+    }
+
+    #endregion
+
+    #region Game Utils
+
+    private void ClampArenaSize(string value)
+    {
+        if (!int.TryParse(value, out var arenaSize)) return;
+        txtArenaSize.text = arenaSize switch
+        {
+            < 10 => "10",
+            > 150 => "150",
+            _ => txtArenaSize.text
+        };
     }
 
     #endregion

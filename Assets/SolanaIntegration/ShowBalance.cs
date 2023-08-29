@@ -31,11 +31,11 @@ public class ShowBalance : MonoBehaviour
         _txtBalance.text = $"{Math.Round(balance, 3)} SOL";
         
         // Try to request airdrop if balance is 0
-        if (Web3.Account != null && balance == 0 && Web3.Rpc.NodeAddress.ToString().Contains("devnet")) RequestAirdrop().Forget();
+        if (Web3.Account != null && balance < 1 && Web3.Rpc.NodeAddress.ToString().Contains("devnet")) RequestAirdrop().Forget();
     }
     
     private async UniTask RequestAirdrop()
     { 
-        await Web3.Wallet.RequestAirdrop(commitment: Commitment.Confirmed);
+        await Web3.Wallet.RequestAirdrop(commitment: Commitment.Finalized);
     }
 }
