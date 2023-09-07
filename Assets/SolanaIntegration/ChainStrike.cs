@@ -1,18 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using System.Threading.Tasks;
-using Solana.Unity;
 using Solana.Unity.Programs.Abstract;
 using Solana.Unity.Programs.Utilities;
 using Solana.Unity.Rpc;
-using Solana.Unity.Rpc.Builders;
 using Solana.Unity.Rpc.Core.Http;
 using Solana.Unity.Rpc.Core.Sockets;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.Wallet;
-using KamikazeJoe;
 using KamikazeJoe.Program;
 using KamikazeJoe.Errors;
 using KamikazeJoe.Accounts;
@@ -27,6 +23,8 @@ namespace KamikazeJoe
             public static ulong ACCOUNT_DISCRIMINATOR => 1331205435963103771UL;
             public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{27, 90, 166, 125, 74, 100, 121, 18};
             public static string ACCOUNT_DISCRIMINATOR_B58 => "5aNQXizG8jB";
+            public uint Id { get; set; }
+
             public byte Width { get; set; }
 
             public byte Height { get; set; }
@@ -54,6 +52,8 @@ namespace KamikazeJoe
                 }
 
                 Game result = new Game();
+                result.Id = _data.GetU32(offset);
+                offset += 4;
                 result.Width = _data.GetU8(offset);
                 offset += 1;
                 result.Height = _data.GetU8(offset);
@@ -117,11 +117,11 @@ namespace KamikazeJoe
             public static ulong ACCOUNT_DISCRIMINATOR => 17022084798167872927UL;
             public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{159, 117, 95, 227, 239, 151, 58, 236};
             public static string ACCOUNT_DISCRIMINATOR_B58 => "TfwwBiNJtao";
-            public PublicKey CurrentGame { get; set; }
+            public PublicKey Authority { get; set; }
 
-            public ulong Games { get; set; }
+            public uint Games { get; set; }
 
-            public ulong Won { get; set; }
+            public uint Won { get; set; }
 
             public static User Deserialize(ReadOnlySpan<byte> _data)
             {
@@ -134,16 +134,12 @@ namespace KamikazeJoe
                 }
 
                 User result = new User();
-                if (_data.GetBool(offset++))
-                {
-                    result.CurrentGame = _data.GetPubKey(offset);
-                    offset += 32;
-                }
-
-                result.Games = _data.GetU64(offset);
-                offset += 8;
-                result.Won = _data.GetU64(offset);
-                offset += 8;
+                result.Authority = _data.GetPubKey(offset);
+                offset += 32;
+                result.Games = _data.GetU32(offset);
+                offset += 4;
+                result.Won = _data.GetU32(offset);
+                offset += 4;
                 return result;
             }
         }
@@ -180,7 +176,10 @@ namespace KamikazeJoe
             MovingIntoNotEmptyCell = 6004U,
             InvalidMovement = 6005U,
             InvalidJoin = 6006U,
-            InvalidClaim = 6007U
+            InvalidClaim = 6007U,
+            Overflow = 6008U,
+            InvalidUser = 6009U,
+            InvalidAuthority = 6010U
         }
     }
 
@@ -497,7 +496,7 @@ namespace KamikazeJoe
 
         protected override Dictionary<uint, ProgramError<KamikazeJoeErrorKind>> BuildErrorsDictionary()
         {
-            return new Dictionary<uint, ProgramError<KamikazeJoeErrorKind>>{{6000U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidSize, "Invalid Grid size")}, {6001U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.GameEnded, "Unable to join a game that ended")}, {6002U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.PlayerNotFound, "Player is not part of this game")}, {6003U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.NotValidEnergy, "Energy is not a valid value")}, {6004U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.MovingIntoNotEmptyCell, "Unable to move into a not empty cell")}, {6005U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidMovement, "This movement is not valid")}, {6006U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidJoin, "This position is not valid for joining the game")}, {6007U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidClaim, "Price can't be claimed")}, };
+            return new Dictionary<uint, ProgramError<KamikazeJoeErrorKind>>{{6000U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidSize, "Invalid Grid size")}, {6001U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.GameEnded, "Unable to join a game that ended")}, {6002U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.PlayerNotFound, "Player is not part of this game")}, {6003U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.NotValidEnergy, "Energy is not a valid value")}, {6004U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.MovingIntoNotEmptyCell, "Unable to move into a not empty cell")}, {6005U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidMovement, "This movement is not valid")}, {6006U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidJoin, "This position is not valid for joining the game")}, {6007U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidClaim, "Price can't be claimed")}, {6008U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.Overflow, "Invalid Operation")}, {6009U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidUser, "Invalid User")}, {6010U, new ProgramError<KamikazeJoeErrorKind>(KamikazeJoeErrorKind.InvalidAuthority, "Player key does not match user authority")}, };
         }
     }
 
@@ -551,21 +550,31 @@ namespace KamikazeJoe
 
         public class MakeMoveAccounts
         {
-            public PublicKey Player { get; set; }
+            public PublicKey Payer { get; set; }
+
+            public PublicKey User { get; set; }
 
             public PublicKey Game { get; set; }
+
+            public PublicKey SessionToken { get; set; }
         }
 
         public class ExplodeAccounts
         {
-            public PublicKey Player { get; set; }
+            public PublicKey Payer { get; set; }
+
+            public PublicKey User { get; set; }
 
             public PublicKey Game { get; set; }
+
+            public PublicKey SessionToken { get; set; }
         }
 
         public class ClaimPrizeAccounts
         {
-            public PublicKey Player { get; set; }
+            public PublicKey Payer { get; set; }
+
+            public PublicKey Receiver { get; set; }
 
             public PublicKey User { get; set; }
 
@@ -689,7 +698,7 @@ namespace KamikazeJoe
             public static Solana.Unity.Rpc.Models.TransactionInstruction MakeMove(MakeMoveAccounts accounts, Facing direction, byte energy, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(16848199159844982094UL, offset);
@@ -706,7 +715,7 @@ namespace KamikazeJoe
             public static Solana.Unity.Rpc.Models.TransactionInstruction Explode(ExplodeAccounts accounts, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(17851550339501723000UL, offset);
@@ -719,7 +728,7 @@ namespace KamikazeJoe
             public static Solana.Unity.Rpc.Models.TransactionInstruction ClaimPrize(ClaimPrizeAccounts accounts, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Receiver == null ? programId : accounts.Receiver, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(16999468971785447837UL, offset);
