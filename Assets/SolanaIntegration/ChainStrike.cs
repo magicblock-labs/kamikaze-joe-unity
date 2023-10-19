@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
+using Solana.Unity;
 using Solana.Unity.Programs.Abstract;
 using Solana.Unity.Programs.Utilities;
 using Solana.Unity.Rpc;
+using Solana.Unity.Rpc.Builders;
 using Solana.Unity.Rpc.Core.Http;
 using Solana.Unity.Rpc.Core.Sockets;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.Wallet;
+using KamikazeJoe;
 using KamikazeJoe.Program;
 using KamikazeJoe.Errors;
 using KamikazeJoe.Accounts;
@@ -77,6 +81,38 @@ namespace KamikazeJoe
                     result.Players[resultPlayersIdx] = resultPlayersresultPlayersIdx;
                 }
 
+                return result;
+            }
+        }
+
+        public partial class Leaderboard
+        {
+            public static ulong ACCOUNT_DISCRIMINATOR => 2596640482820799223UL;
+            public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{247, 186, 238, 243, 194, 30, 9, 36};
+            public static string ACCOUNT_DISCRIMINATOR_B58 => "iSJ1okut6kT";
+            public PublicKey Game { get; set; }
+
+            public PublicKey LeaderboardField { get; set; }
+
+            public PublicKey TopEntries { get; set; }
+
+            public static Leaderboard Deserialize(ReadOnlySpan<byte> _data)
+            {
+                int offset = 0;
+                ulong accountHashValue = _data.GetU64(offset);
+                offset += 8;
+                if (accountHashValue != ACCOUNT_DISCRIMINATOR)
+                {
+                    return null;
+                }
+
+                Leaderboard result = new Leaderboard();
+                result.Game = _data.GetPubKey(offset);
+                offset += 32;
+                result.LeaderboardField = _data.GetPubKey(offset);
+                offset += 32;
+                result.TopEntries = _data.GetPubKey(offset);
+                offset += 32;
                 return result;
             }
         }
@@ -335,6 +371,17 @@ namespace KamikazeJoe
             return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Game>>(res, resultingAccounts);
         }
 
+        public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Leaderboard>>> GetLeaderboardsAsync(string programAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = Leaderboard.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
+            var res = await RpcClient.GetProgramAccountsAsync(programAddress, commitment, memCmpList: list);
+            if (!res.WasSuccessful || !(res.Result?.Count > 0))
+                return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Leaderboard>>(res);
+            List<Leaderboard> resultingAccounts = new List<Leaderboard>(res.Result.Count);
+            resultingAccounts.AddRange(res.Result.Select(result => Leaderboard.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
+            return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Leaderboard>>(res, resultingAccounts);
+        }
+
         public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<Matches>>> GetMatchessAsync(string programAddress, Commitment commitment = Commitment.Finalized)
         {
             var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = Matches.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
@@ -377,6 +424,15 @@ namespace KamikazeJoe
             return new Solana.Unity.Programs.Models.AccountResultWrapper<Game>(res, resultingAccount);
         }
 
+        public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Leaderboard>> GetLeaderboardAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
+            if (!res.WasSuccessful)
+                return new Solana.Unity.Programs.Models.AccountResultWrapper<Leaderboard>(res);
+            var resultingAccount = Leaderboard.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
+            return new Solana.Unity.Programs.Models.AccountResultWrapper<Leaderboard>(res, resultingAccount);
+        }
+
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<Matches>> GetMatchesAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
         {
             var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
@@ -411,6 +467,18 @@ namespace KamikazeJoe
                 Game parsingResult = null;
                 if (e.Value?.Data?.Count > 0)
                     parsingResult = Game.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
+                callback(s, e, parsingResult);
+            }, commitment);
+            return res;
+        }
+
+        public async Task<SubscriptionState> SubscribeLeaderboardAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, Leaderboard> callback, Commitment commitment = Commitment.Finalized)
+        {
+            SubscriptionState res = await StreamingRpcClient.SubscribeAccountInfoAsync(accountAddress, (s, e) =>
+            {
+                Leaderboard parsingResult = null;
+                if (e.Value?.Data?.Count > 0)
+                    parsingResult = Leaderboard.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
                 callback(s, e, parsingResult);
             }, commitment);
             return res;
@@ -491,6 +559,18 @@ namespace KamikazeJoe
         public async Task<RequestResult<string>> SendClaimPrizeAsync(ClaimPrizeAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
             Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.ClaimPrize(accounts, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        public async Task<RequestResult<string>> SendClaimPrizeSoarAsync(ClaimPrizeSoarAccounts accounts, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.ClaimPrizeSoar(accounts, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        public async Task<RequestResult<string>> SendInitializeLeaderboardAsync(InitializeLeaderboardAccounts accounts, PublicKey game, PublicKey leaderboard, PublicKey topEntries, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.KamikazeJoeProgram.InitializeLeaderboard(accounts, game, leaderboard, topEntries, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
@@ -581,6 +661,44 @@ namespace KamikazeJoe
             public PublicKey Game { get; set; }
 
             public PublicKey Vault { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class ClaimPrizeSoarAccounts
+        {
+            public PublicKey Payer { get; set; }
+
+            public PublicKey Receiver { get; set; }
+
+            public PublicKey User { get; set; }
+
+            public PublicKey Game { get; set; }
+
+            public PublicKey Vault { get; set; }
+
+            public PublicKey LeaderboardInfo { get; set; }
+
+            public PublicKey SoarGame { get; set; }
+
+            public PublicKey SoarLeaderboard { get; set; }
+
+            public PublicKey SoarPlayerAccount { get; set; }
+
+            public PublicKey SoarPlayerScores { get; set; }
+
+            public PublicKey SoarTopEntries { get; set; }
+
+            public PublicKey SoarProgram { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class InitializeLeaderboardAccounts
+        {
+            public PublicKey Payer { get; set; }
+
+            public PublicKey Leaderboard { get; set; }
 
             public PublicKey SystemProgram { get; set; }
         }
@@ -733,6 +851,38 @@ namespace KamikazeJoe
                 int offset = 0;
                 _data.WriteU64(16999468971785447837UL, offset);
                 offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ClaimPrizeSoar(ClaimPrizeSoarAccounts accounts, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Receiver == null ? programId : accounts.Receiver, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Game, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Vault, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.LeaderboardInfo, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SoarGame, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SoarLeaderboard, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SoarPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SoarPlayerScores, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SoarTopEntries, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SoarProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(8161990115184007846UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction InitializeLeaderboard(InitializeLeaderboardAccounts accounts, PublicKey game, PublicKey leaderboard, PublicKey topEntries, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Payer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Leaderboard, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(12707869719036827439UL, offset);
+                offset += 8;
+                _data.WritePubKey(game, offset);
+                offset += 32;
+                _data.WritePubKey(leaderboard, offset);
+                offset += 32;
+                _data.WritePubKey(topEntries, offset);
+                offset += 32;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};

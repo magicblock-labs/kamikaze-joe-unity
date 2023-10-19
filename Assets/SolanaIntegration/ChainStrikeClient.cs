@@ -17,10 +17,13 @@ using Solana.Unity.Rpc.Messages;
 using Solana.Unity.Rpc.Models;
 using Solana.Unity.Rpc.Types;
 using Solana.Unity.SDK;
+using Solana.Unity.Soar;
+using Solana.Unity.Soar.Program;
 using Solana.Unity.Wallet;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using InitializeGameAccounts = KamikazeJoe.Program.InitializeGameAccounts;
 using Random = System.Random;
 
 // ReSharper disable once CheckNamespace
@@ -50,11 +53,15 @@ public class ChainStrikeClient : MonoBehaviour
     private PublicKey _userPda;
 
     private readonly PublicKey _kamikazeJoeProgramId = new("JoeXD3mj5VXB2xKUz6jJ8D2AC72pXCydA6fnQJg2JiG");
-    //private readonly PublicKey _chainStrikeProgramId = new("3ARzo1BnheocchBNMxEo5f86nZ7MkyyiSgZGBn6WBxPf");
     
+    // Kamikaze Joe client
     private KamikazeJoeClient _kamikazeJoeClient;
     private KamikazeJoeClient KamikazeJoeClient => _kamikazeJoeClient ??= 
         new KamikazeJoeClient(Web3.Rpc, Web3.WsRpc, _kamikazeJoeProgramId);
+    
+    // Soar client
+    private SoarClient _soarClient;
+    private SoarClient SoarClient => _soarClient ??= new SoarClient(Web3.Rpc, Web3.WsRpc);
 
     private static readonly int[][] SpawnPoints = {
         new[] { 1, 1}, new[] { 27, 26},
@@ -68,6 +75,7 @@ public class ChainStrikeClient : MonoBehaviour
     private Facing _prevMove;
     
     private SessionWallet _sessionWallet;
+    private int _prevPlayersLength = 0;
     private const string _sessionPassword = "kmzjoe-session-password";
 
 
@@ -279,9 +287,9 @@ public class ChainStrikeClient : MonoBehaviour
         if(Web3.Account == null) return;
         var game = (await KamikazeJoeClient.GetGameAsync(gameId, Commitment.Confirmed)).ParsedResult;
         if(game == null) return;
-        if(game.TicketPrice == 0 || game.PrizeClaimed) return;
+        if(game.TicketPrice == 0 || game.PrizeClaimed || game.GameState?.WonValue?.Winner != Web3.Account.PublicKey) return;
 
-        var res = await ClaimRewardTransaction();
+        var res = await ClaimRewardAndSubmitScoreTransaction();
         Debug.Log($"Signature: {res?.Result}");
         if(res == null) return;
         if (res.WasSuccessful)
@@ -368,9 +376,14 @@ public class ChainStrikeClient : MonoBehaviour
         {
             UIManger.Instance.ResetEnergy();
             UIManger.Instance.StartReceivingInput();
+            _initPlayer = false;
+        }
+
+        if (game.Players.Length != _prevPlayersLength)
+        {
             var pricePool = game.TicketPrice / Math.Pow(10, 9) * game.Players.Length * 0.9;
             UIManger.Instance.SetPrizePool((float)Math.Round(pricePool, 2));
-            _initPlayer = false;
+            _prevPlayersLength = game.Players.Length;
         }
         if(game.GameState?.Type == GameStateType.Won && game.GameState.WonValue.Winner == Web3.Account?.PublicKey)
         {
@@ -378,8 +391,10 @@ public class ChainStrikeClient : MonoBehaviour
             ClaimReward(_gameInstanceId).Forget();
         }
 
+        // If won or lost, close session
         if (game.GameState?.Type == GameStateType.Won || game.Players?.FirstOrDefault(p => p.Address == Web3.Account)?.Energy == 0)
         {
+            if(Web3.Account != null && game.GameState?.WonValue?.Winner == Web3.Account.PublicKey && !game.PrizeClaimed) return;
             if(_sessionWallet != null && await _sessionWallet.IsSessionTokenInitialized())
                 _sessionWallet.CloseSession().AsUniTask().Forget();
         }
@@ -401,7 +416,6 @@ public class ChainStrikeClient : MonoBehaviour
             };
             
             var userPda = FindUserPda(Web3.Account);
-            
             var matchesPda = FindMatchesPda();
             var vaultPda = FindVaultPda();
             
@@ -465,6 +479,53 @@ public class ChainStrikeClient : MonoBehaviour
             var joinGameIx = KamikazeJoeProgram.JoinGame(accounts: joinGameAccounts, (byte) spawnPoint[0], (byte) spawnPoint[1], _kamikazeJoeProgramId);
             tx.Instructions.Add(joinGameIx);
             
+            #region Soar initialization
+            
+            // Soar initialization
+            var playerAccount = SoarPda.PlayerPda(Web3.Account);
+            var leaderboard = (await KamikazeJoeClient.GetLeaderboardAsync(FindSoarPda())).ParsedResult;
+            var playerScores = SoarPda.PlayerScoresPda(playerAccount, leaderboard.LeaderboardField);
+            
+            if (!await IsPdaInitialized(SoarPda.PlayerPda(Web3.Account)))
+            {
+                var accountsInitPlayer = new InitializePlayerAccounts()
+                {
+                    Payer = Web3.Account,
+                    User = Web3.Account,
+                    PlayerAccount = playerAccount,
+                    SystemProgram = SystemProgram.ProgramIdKey
+                };
+                var initPlayerIx = SoarProgram.InitializePlayer(
+                    accounts: accountsInitPlayer,
+                    username: PlayerPrefs.GetString("web3AuthUsername", ""),
+                    nftMeta: PublicKey.DefaultPublicKey,
+                    SoarProgram.ProgramIdKey
+                );
+                tx.Add(initPlayerIx);
+            
+            }
+            
+            if (!await IsPdaInitialized(playerScores))
+            {
+                var registerPlayerAccounts = new RegisterPlayerAccounts()
+                {
+                    Payer = Web3.Account,
+                    User = Web3.Account,
+                    PlayerAccount = playerAccount,
+                    Game = leaderboard.Game,
+                    Leaderboard = leaderboard.LeaderboardField,
+                    NewList = playerScores,
+                    SystemProgram = SystemProgram.ProgramIdKey
+                };
+                var registerPlayerIx = SoarProgram.RegisterPlayer(
+                    registerPlayerAccounts,
+                    SoarProgram.ProgramIdKey
+                );
+                tx.Add(registerPlayerIx);
+            }
+            
+            #endregion
+            
             if (UseSessionWallet())
             {
                 _sessionWallet = await SessionWallet.GetSessionWallet(
@@ -483,6 +544,7 @@ public class ChainStrikeClient : MonoBehaviour
                 tx.Instructions.Add(createSessionIx);
                 _sessionWallet.SignInitSessionTx(tx);
             }
+
             return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: false, commitment: Commitment.Confirmed);
         }
 
@@ -595,6 +657,57 @@ public class ChainStrikeClient : MonoBehaviour
             return await SignAndSendTransaction(tx);
         }
         
+        private async Task<RequestResult<string>> ClaimRewardAndSubmitScoreTransaction()
+        {
+            var game = (await KamikazeJoeClient.GetGameAsync(_gameInstanceId, Commitment.Confirmed)).ParsedResult;
+            var soar = (await KamikazeJoeClient.GetLeaderboardAsync(FindSoarPda())).ParsedResult;
+            if (game == null || game.GameState?.WonValue?.Winner == null)
+            {
+                Debug.LogError($"Can't claim price for game: {_gameInstanceId}");
+                return null;
+            }
+
+            if (soar == null)
+            {
+                Debug.LogError("Leaderboard not initialized");
+                return null;
+            }
+            var tx = new Transaction()
+            {
+                FeePayer = Web3.Account,
+                Instructions = new List<TransactionInstruction>(),
+                RecentBlockHash = await Web3.BlockHash(commitment: Commitment.Confirmed, useCache: false)
+            };
+
+            var playerAccount = SoarPda.PlayerPda(game.GameState.WonValue.Winner);
+
+            var claimPrizeAccounts = new ClaimPrizeSoarAccounts()
+            {
+                Payer = Web3.Account,
+                User = FindUserPda(game.GameState.WonValue.Winner),
+                Receiver = game.GameState.WonValue.Winner,
+                Game = _gameInstanceId,
+                Vault = FindVaultPda(),
+                LeaderboardInfo = FindSoarPda(),
+                SoarGame = soar.Game,
+                SoarLeaderboard = soar.LeaderboardField,
+                SoarPlayerAccount = playerAccount,
+                SoarPlayerScores = SoarPda.PlayerScoresPda(playerAccount, soar.LeaderboardField),
+                SoarTopEntries = soar.TopEntries,
+                SoarProgram = SoarProgram.ProgramIdKey,
+                SystemProgram = SystemProgram.ProgramIdKey
+            };
+            if (_sessionWallet != null)
+            {
+                claimPrizeAccounts.Payer = _sessionWallet.Account;
+            }
+        
+            var claimPrizeIx = KamikazeJoeProgram.ClaimPrizeSoar(accounts: claimPrizeAccounts, _kamikazeJoeProgramId);
+            tx.Instructions.Add(claimPrizeIx);
+        
+            return await SignAndSendTransaction(tx);
+        }
+        
         private async Task<RequestResult<string>> SignAndSendTransaction(Transaction tx)
         {
             if (_sessionWallet != null)
@@ -664,6 +777,15 @@ public class ChainStrikeClient : MonoBehaviour
             PublicKey.TryFindProgramAddress(new[]
             {
                 Encoding.UTF8.GetBytes("matches")
+            }, _kamikazeJoeProgramId, out var pda, out _);
+            return pda;
+        }
+        
+        private PublicKey FindSoarPda()
+        {
+            PublicKey.TryFindProgramAddress(new[]
+            {
+                Encoding.UTF8.GetBytes("soar")
             }, _kamikazeJoeProgramId, out var pda, out _);
             return pda;
         }
