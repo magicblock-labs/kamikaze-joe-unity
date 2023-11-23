@@ -616,7 +616,7 @@ public class ChainStrikeClient : MonoBehaviour
             }
             var explodeIx = KamikazeJoeProgram.Explode(accounts, _kamikazeJoeProgramId);
         
-            //tx.Instructions.Add(ComputeBudgetProgram.SetComputeUnitLimit(600000));
+            tx.Instructions.Add(ComputeBudgetProgram.SetComputeUnitLimit(600000));
             tx.Instructions.Add(explodeIx);
         
             return await SignAndSendTransaction(tx);
