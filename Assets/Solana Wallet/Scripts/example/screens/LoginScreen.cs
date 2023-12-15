@@ -41,6 +41,13 @@ namespace Solana.Unity.SDK.Example
                 manager.ShowScreen(this, "wallet_screen");
                 gameObject.SetActive(false);
             }
+            
+            Web3.OnLogin += OnLogin;
+        }
+
+        private void OnLogin(Account account)
+        {
+            CheckAccount(account);
         }
 
         private void Start()

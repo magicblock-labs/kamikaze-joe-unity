@@ -545,7 +545,7 @@ public class ChainStrikeClient : MonoBehaviour
                 _sessionWallet.SignInitSessionTx(tx);
             }
 
-            return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: false, commitment: Commitment.Confirmed);
+            return await Web3.Wallet.SignAndSendTransaction(tx, skipPreflight: true, commitment: Commitment.Confirmed);
         }
 
         private static bool UseSessionWallet()
@@ -785,7 +785,7 @@ public class ChainStrikeClient : MonoBehaviour
         {
             PublicKey.TryFindProgramAddress(new[]
             {
-                Encoding.UTF8.GetBytes("soar")
+                Encoding.UTF8.GetBytes("soar-leaderboard")
             }, _kamikazeJoeProgramId, out var pda, out _);
             return pda;
         }
